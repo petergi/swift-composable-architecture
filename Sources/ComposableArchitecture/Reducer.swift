@@ -1,3 +1,4 @@
+import CasePaths
 import Combine
 
 /// A reducer describes how to evolve the current state of an application to the next state, given
@@ -55,8 +56,8 @@ public struct Reducer<State, Action, Environment> {
     Self { _, _, _ in .none }
   }
 
-  /// Combines many reducers into a single one by running each one on the state, and merging all of
-  /// the effects together.
+  /// Combines many reducers into a single one by running each one on the state, and merging
+  /// all of the effects.
   ///
   /// - Parameter reducers: A list of reducers.
   /// - Returns: A single reducer.
@@ -65,7 +66,7 @@ public struct Reducer<State, Action, Environment> {
   }
 
   /// Combines an array of reducers into a single one by running each one on the state, and
-  /// concatenating all of the arrays of effects.
+  /// merging all of the effects.
   ///
   /// - Parameter reducers: An array of reducers.
   /// - Returns: A single reducer.
@@ -73,6 +74,15 @@ public struct Reducer<State, Action, Environment> {
     Self { value, action, environment in
       .merge(reducers.map { $0.reducer(&value, action, environment) })
     }
+  }
+
+  /// Combines the current reducer with another given reducer by running each one on the state,
+  /// and merging their effects.
+  ///
+  /// - Parameter other: Another reducer.
+  /// - Returns: A single reducer.
+  public func combined(with other: Reducer) -> Reducer {
+    .combine(self, other)
   }
 
   /// Transforms a reducer that works on local state, action and environment into one that works on
@@ -155,8 +165,28 @@ public struct Reducer<State, Action, Environment> {
   ///   state.
   public var optional: Reducer<State?, Action, Environment> {
     .init { state, action, environment in
-      guard state != nil else { return .none }
-      return self.callAsFunction(&state!, action, environment)
+      guard state != nil else {
+        assertionFailure(
+          """
+          "\(debugCaseOutput(action))" was received by an optional reducer when its state was \
+          "nil". This can happen for a few reasons:
+
+          * The optional reducer was combined with or run from another reducer that set \
+          "\(State.self)" to "nil" before the optional reducer ran. Combine or run optional \
+          reducers before reducers that can set their state to "nil". This ensures that optional \
+          reducers can handle their actions while their state is still non-"nil".
+
+          * An active effect emitted this action while state was "nil". Make sure that effects for \
+          this optional reducer are canceled when optional state is set to "nil".
+
+          * This action was sent to the store while state was "nil". Make sure that actions for \
+          this reducer can only be sent to a view store when state is non-"nil". In SwiftUI \
+          applications, use "IfLetStore".
+          """
+        )
+        return .none
+      }
+      return self.reducer(&state!, action, environment)
     }
   }
 
@@ -194,6 +224,30 @@ public struct Reducer<State, Action, Environment> {
       guard let (index, localAction) = toLocalAction.extract(from: globalAction) else {
         return .none
       }
+      // NB: This does not need to be a fatal error because of the index subscript that follows it.
+      assert(
+        index < globalState[keyPath: toLocalState].endIndex,
+        """
+        "\(debugCaseOutput(localAction))" was received by a "forEach" reducer at index \(index) \
+        when its state contained no element at this index. This is considered an application logic \
+        error, and can happen for a few reasons:
+
+        * This "forEach" reducer was combined with or run from another reducer that removed the \
+        element at this index when it handled this action. To fix this make sure that this \
+        "forEach" reducer is run before any other reducers that can move or remove elements from \
+        state. This ensures that "forEach" reducers can handle their actions for the element at \
+        the intended index.
+
+        * An in-flight effect emitted this action while state contained no element at this index. \
+        To fix this make sure that effects for this "forEach" reducer are canceled whenever \
+        elements are moved or removed from its state. If your "forEach" reducer returns any \
+        long-living effects, you should use the identifier-based "forEach", instead.
+
+        * This action was sent to the store while its state contained no element at this index. \
+        To fix this make sure that actions for this reducer can only be sent to a view store when \
+        its state contains an element at this index. In SwiftUI applications, use `ForEachStore`.
+        """
+      )
       return self.reducer(
         &globalState[keyPath: toLocalState][index],
         localAction,
@@ -236,9 +290,36 @@ public struct Reducer<State, Action, Environment> {
   ) -> Reducer<GlobalState, GlobalAction, GlobalEnvironment> {
     .init { globalState, globalAction, globalEnvironment in
       guard let (id, localAction) = toLocalAction.extract(from: globalAction) else { return .none }
-      return self.optional
+
+      // This does not need to be a fatal error because of the unwrap that follows it.
+      assert(
+        globalState[keyPath: toLocalState][id: id] != nil,
+        """
+        "\(debugCaseOutput(localAction))" was received by a "forEach" reducer at id \(id) \
+        when its state contained no element at this id. This is considered an application logic \
+        error, and can happen for a few reasons:
+
+        * This "forEach" reducer was combined with or run from another reducer that removed the \
+        element at this id when it handled this action. To fix this make sure that this \
+        "forEach" reducer is run before any other reducers that can move or remove elements from \
+        state. This ensures that "forEach" reducers can handle their actions for the element at \
+        the intended id.
+
+        * An in-flight effect emitted this action while state contained no element at this id. \
+        To fix this make sure that effects for this "forEach" reducer are canceled whenever \
+        elements are moved or removed from its state. If your "forEach" reducer returns any \
+        long-living effects, you should use the identifier-based "forEach", instead.
+
+        * This action was sent to the store while its state contained no element at this id. \
+        To fix this make sure that actions for this reducer can only be sent to a view store when \
+        its state contains an element at this id. In SwiftUI applications, use `ForEachStore`.
+        """
+      )
+
+      return
+        self
         .reducer(
-          &globalState[keyPath: toLocalState][id],
+          &globalState[keyPath: toLocalState][id: id]!,
           localAction,
           toLocalEnvironment(globalEnvironment)
         )
@@ -262,14 +343,51 @@ public struct Reducer<State, Action, Environment> {
   ) -> Reducer<GlobalState, GlobalAction, GlobalEnvironment> {
     .init { globalState, globalAction, globalEnvironment in
       guard let (key, localAction) = toLocalAction.extract(from: globalAction) else { return .none }
-      return self.optional
-        .reducer(
-          &globalState[keyPath: toLocalState][key],
-          localAction,
-          toLocalEnvironment(globalEnvironment)
-        )
-        .map { toLocalAction.embed((key, $0)) }
+
+      assert(
+        globalState[keyPath: toLocalState][key] != nil,
+        """
+        "\(debugCaseOutput(localAction))" was received by a "forEach" reducer at key \(key) \
+        when its state contained no element at this key. This is considered an application logic \
+        error, and can happen for a few reasons:
+
+        * This "forEach" reducer was combined with or run from another reducer that removed the \
+        element at this key when it handled this action. To fix this make sure that this \
+        "forEach" reducer is run before any other reducers that can move or remove elements from \
+        state. This ensures that "forEach" reducers can handle their actions for the element at \
+        the intended key.
+
+        * An in-flight effect emitted this action while state contained no element at this key. \
+        To fix this make sure that effects for this "forEach" reducer are canceled whenever \
+        elements are moved or removed from its state.
+
+        * This action was sent to the store while its state contained no element at this key. \
+        To fix this make sure that actions for this reducer can only be sent to a view store
+        when its state contains an element at this key.
+        """
+      )
+      return self.reducer(
+        &globalState[keyPath: toLocalState][key]!,
+        localAction,
+        toLocalEnvironment(globalEnvironment)
+      )
+      .map { toLocalAction.embed((key, $0)) }
     }
+  }
+
+  /// Runs the reducer.
+  ///
+  /// - Parameters:
+  ///   - state: Mutable state.
+  ///   - action: An action.
+  ///   - environment: An environment.
+  /// - Returns: An effect that can emit zero or more actions.
+  public func run(
+    _ state: inout State,
+    _ action: Action,
+    _ environment: Environment
+  ) -> Effect<Action, Never> {
+    self.reducer(&state, action, environment)
   }
 
   public func callAsFunction(
@@ -278,14 +396,5 @@ public struct Reducer<State, Action, Environment> {
     _ environment: Environment
   ) -> Effect<Action, Never> {
     self.reducer(&state, action, environment)
-  }
-}
-
-extension Reducer where Environment == Void {
-  public func callAsFunction(
-    _ state: inout State,
-    _ action: Action
-  ) -> Effect<Action, Never> {
-    self.callAsFunction(&state, action, ())
   }
 }

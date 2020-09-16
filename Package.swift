@@ -13,32 +13,58 @@ let package = Package(
   products: [
     .library(
       name: "ComposableArchitecture",
-      type: .dynamic,
       targets: ["ComposableArchitecture"]
     ),
     .library(
-      name: "ComposableArchitectureTestSupport",
-      type: .dynamic,
-      targets: ["ComposableArchitectureTestSupport"]
+      name: "ComposableCoreLocation",
+      targets: ["ComposableCoreLocation"]
     ),
+    .library(
+      name: "ComposableCoreMotion",
+      targets: ["ComposableCoreMotion"]
+    ),
+  ],
+  dependencies: [
+    .package(url: "https://github.com/pointfreeco/combine-schedulers", from: "0.1.0"),
+    .package(url: "https://github.com/pointfreeco/swift-case-paths", from: "0.1.1"),
   ],
   targets: [
     .target(
       name: "ComposableArchitecture",
       dependencies: [
+        "CasePaths",
+        "CombineSchedulers",
       ]
     ),
     .testTarget(
       name: "ComposableArchitectureTests",
       dependencies: [
+        "CombineSchedulers",
         "ComposableArchitecture",
-        "ComposableArchitectureTestSupport",
       ]
     ),
     .target(
-      name: "ComposableArchitectureTestSupport",
+      name: "ComposableCoreLocation",
       dependencies: [
-        "ComposableArchitecture",
+        "ComposableArchitecture"
+      ]
+    ),
+    .testTarget(
+      name: "ComposableCoreLocationTests",
+      dependencies: [
+        "ComposableCoreLocation",
+      ]
+    ),
+    .target(
+      name: "ComposableCoreMotion",
+      dependencies: [
+        "ComposableArchitecture"
+      ]
+    ),
+    .testTarget(
+      name: "ComposableCoreMotionTests",
+      dependencies: [
+        "ComposableCoreMotion"
       ]
     ),
   ]

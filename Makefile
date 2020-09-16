@@ -1,7 +1,6 @@
-PLATFORM_IOS = iOS Simulator,name=iPhone 11 Pro Max,OS=13.4
+PLATFORM_IOS = iOS Simulator,name=iPhone 11 Pro Max
 PLATFORM_MACOS = macOS
-PLATFORM_TVOS = tvOS Simulator,name=Apple TV 4K (at 1080p),OS=13.4
-PLATFORM_WATCHOS = watchOS Simulator,name=Apple Watch Series 4 - 44mm,OS=6.2
+PLATFORM_TVOS = tvOS Simulator,name=Apple TV 4K (at 1080p)
 
 default: test-all
 
@@ -14,6 +13,7 @@ test-swift:
 		--parallel
 
 test-workspace:
+	instruments -s devices
 	xcodebuild test \
 		-scheme ComposableArchitecture \
 		-destination platform="$(PLATFORM_IOS)"
@@ -24,6 +24,18 @@ test-workspace:
 		-scheme ComposableArchitecture \
 		-destination platform="$(PLATFORM_TVOS)"
 	xcodebuild test \
+		-scheme ComposableCoreLocation \
+		-destination platform="$(PLATFORM_IOS)"
+	xcodebuild test \
+		-scheme ComposableCoreLocation \
+		-destination platform="$(PLATFORM_MACOS)"
+	xcodebuild test \
+		-scheme ComposableCoreLocation \
+		-destination platform="$(PLATFORM_TVOS)"
+	xcodebuild test \
+		-scheme ComposableCoreMotion \
+		-destination platform="$(PLATFORM_IOS)"
+	xcodebuild test \
 		-scheme "CaseStudies (SwiftUI)" \
 		-destination platform="$(PLATFORM_IOS)"
 	xcodebuild test \
@@ -31,6 +43,12 @@ test-workspace:
 		-destination platform="$(PLATFORM_IOS)"
 	xcodebuild test \
 		-scheme MotionManager \
+		-destination platform="$(PLATFORM_IOS)"
+	xcodebuild test \
+		-scheme LocationManagerDesktop \
+		-destination platform="$(PLATFORM_MACOS)"
+	xcodebuild test \
+		-scheme LocationManagerMobile \
 		-destination platform="$(PLATFORM_IOS)"
 	xcodebuild test \
 		-scheme Search \
@@ -49,6 +67,6 @@ test-workspace:
 		-destination platform="$(PLATFORM_IOS)"
 
 format:
-	swift format --in-place --recursive .
+	swift format --in-place --recursive ./Package.swift ./Sources ./Tests
 
-.PHONY: format
+.PHONY: format test-all test-swift test-workspace

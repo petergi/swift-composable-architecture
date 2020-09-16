@@ -1,8 +1,9 @@
 import SwiftUI
 
 /// A view that safely unwraps a store of optional state in order to show one of two views.
-/// When the underlying state is non-`nil`, the `then` closure will be performed with a `Store`
-/// that holds onto non-optional state, and otherwise the `else` closure will be performed.
+///
+/// When the underlying state is non-`nil`, the `then` closure will be performed with a `Store` that
+/// holds onto non-optional state, and otherwise the `else` closure will be performed.
 ///
 /// This is useful for deciding between two views to show depending on an optional piece of state:
 ///
@@ -21,68 +22,63 @@ import SwiftUI
 ///        ),
 ///        isActive: viewStore.binding(
 ///          get: \.isGameActive,
-///          send: { $0 ? .startButtonTapped : .detailDisissed }
+///          send: { $0 ? .startButtonTapped : .detailDismissed }
 ///        )
 ///      ) {
 ///        Text("Start!")
 ///      }
 ///
-public struct IfLetStore<State, Action, IfContent, ElseContent>: View
-where IfContent: View, ElseContent: View {
-  public let store: Store<State?, Action>
-  public let ifContent: (Store<State, Action>) -> IfContent
-  public let elseContent: () -> ElseContent
+public struct IfLetStore<State, Action, Content>: View where Content: View {
+  private let content: (ViewStore<State?, Action>) -> Content
+  private let store: Store<State?, Action>
 
-  /// Initializes an `IfLetStore` view when you have views you want to show for the case that state
-  /// is non-`nil` _and_ the case that it is `nil`.
+  /// Initializes an `IfLetStore` view that computes content depending on if a store of optional
+  /// state is `nil` or non-`nil`.
   ///
   /// - Parameters:
   ///   - store: A store of optional state.
   ///   - ifContent: A function that is given a store of non-optional state and returns a view that
   ///     is visible only when the optional state is non-`nil`.
   ///   - elseContent: A view that is only visible when the optional state is `nil`.
-  public init(
+  public init<IfContent, ElseContent>(
     _ store: Store<State?, Action>,
     then ifContent: @escaping (Store<State, Action>) -> IfContent,
     else elseContent: @escaping @autoclosure () -> ElseContent
-  ) {
+  ) where Content == _ConditionalContent<IfContent, ElseContent> {
     self.store = store
-    self.ifContent = ifContent
-    self.elseContent = elseContent
-  }
-
-  public var body: some View {
-    WithViewStore(
-      self.store,
-      removeDuplicates: { ($0 != nil) == ($1 != nil) }
-    ) { viewStore in
-      Group<_ConditionalContent<IfContent, ElseContent>> {
-        if let state = viewStore.state {
-          return ViewBuilder.buildEither(
-            first: self.ifContent(
-              self.store.scope(state: { $0 ?? state })
-            )
-          )
-        } else {
-          return ViewBuilder.buildEither(second: self.elseContent())
-        }
+    self.content = { viewStore in
+      if let state = viewStore.state {
+        return ViewBuilder.buildEither(first: ifContent(store.scope(state: { $0 ?? state })))
+      } else {
+        return ViewBuilder.buildEither(second: elseContent())
       }
     }
   }
-}
 
-extension IfLetStore where ElseContent == EmptyView {
-  /// An overload of `IfLetStore.init(_:then:else:)` that does not take the `else` argument and
-  /// instead uses an `EmptyView`.
+  /// Initializes an `IfLetStore` view that computes content depending on if a store of optional
+  /// state is `nil` or non-`nil`.
   ///
   /// - Parameters:
   ///   - store: A store of optional state.
   ///   - ifContent: A function that is given a store of non-optional state and returns a view that
   ///     is visible only when the optional state is non-`nil`.
-  public init(
+  public init<IfContent>(
     _ store: Store<State?, Action>,
     then ifContent: @escaping (Store<State, Action>) -> IfContent
-  ) {
-    self.init(store, then: ifContent, else: EmptyView())
+  ) where Content == IfContent? {
+    self.store = store
+    self.content = { viewStore in
+      viewStore.state.map { state in
+        ifContent(store.scope(state: { $0 ?? state }))
+      }
+    }
+  }
+
+  public var body: some View {
+    WithViewStore(
+      self.store,
+      removeDuplicates: { ($0 != nil) == ($1 != nil) },
+      content: self.content
+    )
   }
 }

@@ -18,33 +18,35 @@ struct EagerNavigationEnvironment {
   var mainQueue: AnySchedulerOf<DispatchQueue>
 }
 
-let eagerNavigationReducer = Reducer<
-  EagerNavigationState, EagerNavigationAction, EagerNavigationEnvironment
->.combine(
-  Reducer { state, action, environment in
-    switch action {
-    case .setNavigation(isActive: true):
-      state.isNavigationActive = true
-      return Effect(value: .setNavigationIsActiveDelayCompleted)
-        .delay(for: 1, scheduler: environment.mainQueue)
-        .eraseToEffect()
-    case .setNavigation(isActive: false):
-      state.isNavigationActive = false
-      state.optionalCounter = nil
-      return .none
-    case .setNavigationIsActiveDelayCompleted:
-      state.optionalCounter = CounterState()
-      return .none
-    case .optionalCounter:
-      return .none
-    }
-  },
-  counterReducer.optional.pullback(
+let eagerNavigationReducer = counterReducer
+  .optional
+  .pullback(
     state: \.optionalCounter,
     action: /EagerNavigationAction.optionalCounter,
     environment: { _ in CounterEnvironment() }
   )
-)
+  .combined(
+    with: Reducer<
+      EagerNavigationState, EagerNavigationAction, EagerNavigationEnvironment
+    > { state, action, environment in
+      switch action {
+      case .setNavigation(isActive: true):
+        state.isNavigationActive = true
+        return Effect(value: .setNavigationIsActiveDelayCompleted)
+          .delay(for: 1, scheduler: environment.mainQueue)
+          .eraseToEffect()
+      case .setNavigation(isActive: false):
+        state.isNavigationActive = false
+        state.optionalCounter = nil
+        return .none
+      case .setNavigationIsActiveDelayCompleted:
+        state.optionalCounter = CounterState()
+        return .none
+      case .optionalCounter:
+        return .none
+      }
+    }
+  )
 
 class EagerNavigationViewController: UIViewController {
   var cancellables: [AnyCancellable] = []
@@ -85,7 +87,7 @@ class EagerNavigationViewController: UIViewController {
         self.navigationController?.pushViewController(
           IfLetStoreController(
             store: self.store
-              .scope(state: \.optionalCounter, action: EagerNavigationAction.optionalCounter),
+              .scope(state: { $0.optionalCounter }, action: EagerNavigationAction.optionalCounter),
             then: CounterViewController.init(store:),
             else: ActivityIndicatorViewController()
           ),

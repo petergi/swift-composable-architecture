@@ -1,5 +1,4 @@
 import Combine
-import ComposableArchitectureTestSupport
 import XCTest
 
 @testable import ComposableArchitecture
@@ -216,5 +215,22 @@ final class StoreTests: XCTestCase {
     store.send(.tap)
 
     XCTAssertEqual(values, [1, 2, 3, 4])
+  }
+
+  func testLotsOfSynchronousActions() {
+    enum Action { case incr, noop }
+    let reducer = Reducer<Int, Action, ()> { state, action, _ in
+      switch action {
+      case .incr:
+        state += 1
+        return state >= 100_000 ? Effect(value: .noop) : Effect(value: .incr)
+      case .noop:
+        return .none
+      }
+    }
+
+    let store = Store(initialState: 0, reducer: reducer, environment: ())
+    store.send(.incr)
+    XCTAssertEqual(ViewStore(store).state, 100_000)
   }
 }

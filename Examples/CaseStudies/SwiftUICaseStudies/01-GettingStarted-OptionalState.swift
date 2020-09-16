@@ -23,27 +23,29 @@ enum OptionalBasicsAction: Equatable {
 
 struct OptionalBasicsEnvironment {}
 
-let optionalBasicsReducer = Reducer<
-  OptionalBasicsState, OptionalBasicsAction, OptionalBasicsEnvironment
->.combine(
-  Reducer { state, action, environment in
-    switch action {
-    case .toggleCounterButtonTapped:
-      state.optionalCounter =
-        state.optionalCounter == nil
-        ? CounterState()
-        : nil
-      return .none
-    case .optionalCounter:
-      return .none
-    }
-  },
-  counterReducer.optional.pullback(
+let optionalBasicsReducer = counterReducer
+  .optional
+  .pullback(
     state: \.optionalCounter,
     action: /OptionalBasicsAction.optionalCounter,
     environment: { _ in CounterEnvironment() }
   )
-)
+  .combined(
+    with: Reducer<
+      OptionalBasicsState, OptionalBasicsAction, OptionalBasicsEnvironment
+    > { state, action, environment in
+      switch action {
+      case .toggleCounterButtonTapped:
+        state.optionalCounter =
+          state.optionalCounter == nil
+          ? CounterState()
+          : nil
+        return .none
+      case .optionalCounter:
+        return .none
+      }
+    }
+  )
 
 struct OptionalBasicsView: View {
   let store: Store<OptionalBasicsState, OptionalBasicsAction>
@@ -58,7 +60,7 @@ struct OptionalBasicsView: View {
 
           IfLetStore(
             self.store.scope(
-              state: \.optionalCounter, action: OptionalBasicsAction.optionalCounter),
+              state: { $0.optionalCounter }, action: OptionalBasicsAction.optionalCounter),
             then: { store in
               VStack(alignment: .leading, spacing: 16) {
                 Text(template: "`CounterState` is non-`nil`", .body)

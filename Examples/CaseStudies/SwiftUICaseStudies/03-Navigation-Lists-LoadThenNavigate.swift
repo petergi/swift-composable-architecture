@@ -9,7 +9,7 @@ private let readMe = """
   depends on this data.
   """
 
-struct LazyListNavigationState: Equatable {
+struct LoadThenNavigateListState: Equatable {
   var rows: IdentifiedArrayOf<Row> = []
   var selection: Identified<Row.ID, CounterState>?
 
@@ -20,61 +20,69 @@ struct LazyListNavigationState: Equatable {
   }
 }
 
-enum LazyListNavigationAction: Equatable {
+enum LoadThenNavigateListAction: Equatable {
   case counter(CounterAction)
   case setNavigation(selection: UUID?)
   case setNavigationSelectionDelayCompleted(UUID)
 }
 
-struct LazyListNavigationEnvironment {
+struct LoadThenNavigateListEnvironment {
   var mainQueue: AnySchedulerOf<DispatchQueue>
 }
 
-let lazyListNavigationReducer = Reducer<
-  LazyListNavigationState, LazyListNavigationAction, LazyListNavigationEnvironment
->.combine(
-  Reducer { state, action, environment in
-    switch action {
-    case .counter:
-      return .none
-
-    case let .setNavigation(selection: .some(id)):
-      for index in state.rows.indices {
-        state.rows[index].isActivityIndicatorVisible = state.rows[index].id == id
-      }
-
-      struct CancelId: Hashable {}
-
-      return Effect(value: .setNavigationSelectionDelayCompleted(id))
-        .delay(for: 1, scheduler: environment.mainQueue)
-        .eraseToEffect()
-        .cancellable(id: CancelId(), cancelInFlight: true)
-
-    case .setNavigation(selection: .none):
-      if let selection = state.selection {
-        state.rows[selection.id]?.count = selection.count
-        state.selection = nil
-      }
-      return .none
-
-    case let .setNavigationSelectionDelayCompleted(id):
-      state.rows[id]?.isActivityIndicatorVisible = false
-      state.selection = Identified(
-        CounterState(count: state.rows[id]?.count ?? 0),
-        id: id
-      )
-      return .none
-    }
-  },
-  counterReducer.optional.pullback(
-    state: \.selection[ifLet: \.value],
-    action: /LazyListNavigationAction.counter,
+let loadThenNavigateListReducer =
+  counterReducer
+  .pullback(
+    state: \Identified.value,
+    action: .self,
+    environment: { $0 }
+  )
+  .optional
+  .pullback(
+    state: \LoadThenNavigateListState.selection,
+    action: /LoadThenNavigateListAction.counter,
     environment: { _ in CounterEnvironment() }
   )
-)
+  .combined(
+    with: Reducer<
+      LoadThenNavigateListState, LoadThenNavigateListAction, LoadThenNavigateListEnvironment
+    > { state, action, environment in
+      struct CancelId: Hashable {}
 
-struct LazyListNavigationView: View {
-  let store: Store<LazyListNavigationState, LazyListNavigationAction>
+      switch action {
+      case .counter:
+        return .none
+
+      case let .setNavigation(selection: .some(id)):
+        for index in state.rows.indices {
+          state.rows[index].isActivityIndicatorVisible = state.rows[index].id == id
+        }
+
+        return Effect(value: .setNavigationSelectionDelayCompleted(id))
+          .delay(for: 1, scheduler: environment.mainQueue)
+          .eraseToEffect()
+          .cancellable(id: CancelId(), cancelInFlight: true)
+
+      case .setNavigation(selection: .none):
+        if let selection = state.selection {
+          state.rows[id: selection.id]?.count = selection.count
+        }
+        state.selection = nil
+        return .cancel(id: CancelId())
+
+      case let .setNavigationSelectionDelayCompleted(id):
+        state.rows[id: id]?.isActivityIndicatorVisible = false
+        state.selection = Identified(
+          CounterState(count: state.rows[id: id]?.count ?? 0),
+          id: id
+        )
+        return .none
+      }
+    }
+  )
+
+struct LoadThenNavigateListView: View {
+  let store: Store<LoadThenNavigateListState, LoadThenNavigateListAction>
 
   var body: some View {
     WithViewStore(self.store) { viewStore in
@@ -84,13 +92,13 @@ struct LazyListNavigationView: View {
             NavigationLink(
               destination: IfLetStore(
                 self.store.scope(
-                  state: \.selection?.value, action: LazyListNavigationAction.counter),
+                  state: { $0.selection?.value }, action: LoadThenNavigateListAction.counter),
                 then: CounterView.init(store:)
               ),
               tag: row.id,
               selection: viewStore.binding(
-                get: \.selection?.id,
-                send: LazyListNavigationAction.setNavigation(selection:)
+                get: { $0.selection?.id },
+                send: LoadThenNavigateListAction.setNavigation(selection:)
               )
             ) {
               HStack {
@@ -109,20 +117,20 @@ struct LazyListNavigationView: View {
   }
 }
 
-struct LazyListNavigationView_Previews: PreviewProvider {
+struct LoadThenNavigateListView_Previews: PreviewProvider {
   static var previews: some View {
     NavigationView {
-      LazyListNavigationView(
+      LoadThenNavigateListView(
         store: Store(
-          initialState: LazyListNavigationState(
+          initialState: LoadThenNavigateListState(
             rows: [
               .init(count: 1, id: UUID()),
               .init(count: 42, id: UUID()),
               .init(count: 100, id: UUID()),
             ]
           ),
-          reducer: lazyListNavigationReducer,
-          environment: LazyListNavigationEnvironment(
+          reducer: loadThenNavigateListReducer,
+          environment: LoadThenNavigateListEnvironment(
             mainQueue: DispatchQueue.main.eraseToAnyScheduler()
           )
         )

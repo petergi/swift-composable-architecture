@@ -1,4 +1,4 @@
-import ComposableArchitectureTestSupport
+import ComposableArchitecture
 import GameCore
 import NewGameCore
 import XCTest
@@ -6,7 +6,7 @@ import XCTest
 class NewGameCoreTests: XCTestCase {
   let store = TestStore(
     initialState: NewGameState(),
-    reducer: newGameFeatureReducer,
+    reducer: newGameReducer,
     environment: NewGameEnvironment()
   )
 

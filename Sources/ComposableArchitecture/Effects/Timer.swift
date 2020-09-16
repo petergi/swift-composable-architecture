@@ -1,7 +1,7 @@
 import Combine
-import Foundation
+import CombineSchedulers
 
-extension Effect {
+extension Effect where Failure == Never {
   /// Returns an effect that repeatedly emits the current time of the given
   /// scheduler on the given interval.
   ///
@@ -14,7 +14,6 @@ extension Effect {
   ///     case .startTimer:
   ///       return Effect.timer(id: TimerId(), every: 1, on: environment.scheduler)
   ///         .map { .timerUpdated($0) }
-  ///         .cancellable(id: TimerId())
   ///     case let .timerUpdated(date):
   ///       state.date = date
   ///       return .none
@@ -36,24 +35,10 @@ extension Effect {
     options: S.SchedulerOptions? = nil
   ) -> Effect where S: Scheduler, S.SchedulerTimeType == Output {
 
-    Deferred { () -> Publishers.HandleEvents<PassthroughSubject<Output, Failure>> in
-      let subject = PassthroughSubject<S.SchedulerTimeType, Failure>()
-
-      let cancellable = scheduler.schedule(
-        after: scheduler.now.advanced(by: interval),
-        interval: interval,
-        tolerance: tolerance ?? .seconds(.max),
-        options: options
-      ) {
-        subject.send(scheduler.now)
-      }
-
-      return subject.handleEvents(
-        receiveCompletion: { _ in cancellable.cancel() },
-        receiveCancel: cancellable.cancel
-      )
-    }
-    .eraseToEffect()
-    .cancellable(id: id)
+    Publishers.Timer(every: interval, tolerance: tolerance, scheduler: scheduler, options: options)
+      .autoconnect()
+      .setFailureType(to: Failure.self)
+      .eraseToEffect()
+      .cancellable(id: id)
   }
 }
